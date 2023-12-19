@@ -1,0 +1,199 @@
+---
+title: "R Notebook"
+---
+
+```{r}
+# 首先把数据读入，查看相关信息
+data<-read.csv('education.csv')
+str(data)
+# 统计data数据框的行数
+num_rows <- nrow(data)
+print(num_rows)
+```
+
+## 简单的数据预处理
+
+根据以下步骤进行一个简单的数据预处理：
+
+1.检查缺失值
+
+2.在经济发展中通常有"南北国家"的定义，那么，在这里我们不妨通过纬度，把"南北国家"作为一个虚拟变量SN引入到建模中，而不再考虑纯粹的经纬度概念。我们留意到给出的数据中并没有给出南北半球的数据，所以我们粗略的以回归线精度进行划分：小于回归线纬度的国家划为0，代表南方国家；大于回归线纬度的国家划为1，代表北方国家。
+
+3.同样的，我们往往也有"东西方国家"的定义。但是因为没有给出东西经，所以考虑先忽略经度。
+
+```{r}
+#检查缺失值
+if (any(is.na(data))) {
+  print("There are NA values in the data frame.")
+} else {
+  print("There are no NA values in the data frame.")
+}
+#添加SN作为虚拟变量
+data$SN <- ifelse(data$Latitude < 30, 0, 1)
+```
+
+## 线性回归模型
+
+选择一般的线性回归模型作为预测模型，查看拟合的效果
+
+```{r}
+#添加虚拟变量SN作为南北国家
+cols_SN<-colnames(data)
+#移除因变量
+cols_SN <- cols_SN[!(cols_SN %in% c("Gross_Tertiary_Education_Enrollment", "Latitude", "Longitude", "Unemployment_Rate","Countries.and.areas"))]
+
+#构建两个预测模型的字符串，分别对应入学率和失业率
+education_SN <- paste("Gross_Tertiary_Education_Enrollment ~", paste(cols_SN, collapse = " + "))
+une_SN <- paste("Unemployment_Rate ~", paste(cols_SN, collapse = " + "))
+edu_model_SN<-lm(as.formula(education_SN),data=data)
+une_model_SN<-lm(as.formula(une_SN),data=data)
+```
+
+构建好模型之后，查看模型的相关情况
+
+```{r}
+#入学率模型
+summary(edu_model_SN)
+```
+
+```{r}
+# 提取模型系数
+coefficients <- summary(edu_model_SN)$coefficients
+coeff_df <- data.frame(Variable = rownames(coefficients), Estimate = coefficients[, "Estimate"])
+# 对数据进行排序
+coeff_df <- coeff_df[order(coeff_df$Estimate), ]
+library(ggplot2)
+ggplot(coeff_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  xlab("Variable") +
+  ylab("Weight") +
+  ggtitle("Variable Weights in edu_model_SN")
+```
+
+```{r}
+#失业率模型（SN)
+summary(une_model_SN)
+```
+
+```{r}
+# 提取模型系数
+coefficients <- summary(une_model_SN)$coefficients
+coeff_df <- data.frame(Variable = rownames(coefficients), Estimate = coefficients[, "Estimate"])
+# 对数据进行排序
+coeff_df <- coeff_df[order(coeff_df$Estimate), ]
+library(ggplot2)
+ggplot(coeff_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  xlab("Variable") +
+  ylab("Weight") +
+  ggtitle("Variable Weights in une_model_SN")
+```
+
+## 优化
+
+通过观察summary中的相关参数和评测指标，我们发现lm对于大学入学率的拟合效果还算不错，但对于失业率的拟合效果很不好。那么我们考虑对失业率的线性回归模型进行进一步的预处理。首先试一试基于AIC的step函数：
+
+### step()函数：
+
+```{r}
+# 使用 step() 函数进行逐步回归 首先采用forward
+une_step_model_forward <- step(une_model_SN, direction = "forward",trace=0)
+
+# 查看优化后的模型摘要
+summary(une_step_model_forward)
+```
+
+```{r}
+# 提取模型系数
+coefficients <- summary(une_step_model_forward)$coefficients
+coeff_df <- data.frame(Variable = rownames(coefficients), Estimate = coefficients[, "Estimate"])
+# 对数据进行排序
+coeff_df <- coeff_df[order(coeff_df$Estimate), ]
+library(ggplot2)
+ggplot(coeff_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  xlab("Variable") +
+  ylab("Weight") +
+  ggtitle("Variable Weights in une_model_SN_forward")
+```
+
+```{r}
+une_step_model_backward <- step(une_model_SN, direction = "backward",trace=0)
+# 查看优化后的模型摘要
+summary(une_step_model_backward)
+```
+
+```{r}
+# 提取模型系数
+coefficients <- summary(une_step_model_backward)$coefficients
+coeff_df <- data.frame(Variable = rownames(coefficients), Estimate = coefficients[, "Estimate"])
+# 对数据进行排序
+coeff_df <- coeff_df[order(coeff_df$Estimate), ]
+library(ggplot2)
+ggplot(coeff_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  xlab("Variable") +
+  ylab("Weight") +
+  ggtitle("Variable Weights in une_model_SN_backward")
+```
+
+看到调整后的R方只是略微提升（0.15-》0.2），R方下降，那么不妨再用PCA优化看看结果。
+
+### PCA优化
+
+```{r}
+# 对除因变量外的数据进行 PCA
+pca_result <- prcomp(data[cols_SN], scale. = TRUE)
+# 查看 PCA 结果摘要
+summary(pca_result)
+
+# 选择前几个主成分构建模型
+num_components <- 10  # 选择的主成分数量
+pca_data <- data.frame(Response = data$Unemployment_Rate, pca_result$x[, 1:num_components])
+pca_model <- lm(Response ~ ., data = pca_data)
+
+# 查看 PCA 模型摘要
+summary(pca_model)
+
+```
+
+可以发现PCA相比于正常的lm在两个R方的数值上只有略微提升，提升空间不如step函数。
+
+## 小结
+
+在这里我们取出最好的两个模型的相关权重图，再画一次，并根据此做出一些分析和建议：
+
+```{r}
+# 对于入学率模型的普通LM
+coefficients <- summary(edu_model_SN)$coefficients
+coeff_df <- data.frame(Variable = rownames(coefficients), Estimate = coefficients[, "Estimate"])
+# 对数据进行排序
+coeff_df <- coeff_df[order(coeff_df$Estimate), ]
+library(ggplot2)
+ggplot(coeff_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  xlab("Variable") +
+  ylab("Weight") +
+  ggtitle("Variable Weights in edu_model_SN")
+```
+
+```{r}
+#对于失业率模型的经过AIC优化的LM模型
+# 提取模型系数
+coefficients <- summary(une_step_model_forward)$coefficients
+coeff_df <- data.frame(Variable = rownames(coefficients), Estimate = coefficients[, "Estimate"])
+# 对数据进行排序
+coeff_df <- coeff_df[order(coeff_df$Estimate), ]
+library(ggplot2)
+ggplot(coeff_df, aes(x = reorder(Variable, Estimate), y = Estimate)) +
+  geom_bar(stat = "identity") +
+  coord_flip() + 
+  xlab("Variable") +
+  ylab("Weight") +
+  ggtitle("Variable Weights in une_model_SN_forward")
+```
