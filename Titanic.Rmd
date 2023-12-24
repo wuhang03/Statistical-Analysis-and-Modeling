@@ -1,0 +1,396 @@
+---
+title: "titanic"
+output: html_notebook
+---
+
+```{r}
+
+library(tidyverse)
+library(caret)
+library(ggplot2)
+
+```
+
+```{r}
+# 读取数据
+titanic_data <- read.csv("titanic.csv")
+
+# 查看数据框的前几行
+print(titanic_data)
+
+```
+
+```{r}
+# 查看数据框的基本信息，包括数据类型和缺失值
+str(titanic_data)
+```
+
+```{r}
+# 汇总统计信息
+summary(titanic_data)
+```
+```{r}
+# 计算每个参数中NA值数量
+sapply(titanic_data,function(x) sum(is.na(x)))
+
+# 统计缺失值数量
+sapply(titanic_data,function(x) sum(x == ""))
+
+```
+```{r}
+# 查找Embarked缺失值
+#Embarked.na <- titanic_data$Embarked
+#na_indices <-which(Embarked.na %in% "")
+#titanic_data <- titanic_data[-na_indices, ]
+#print(titanic_data)
+```
+```{r}
+# 选择Embarked列为空字符串的行，并且只选择特定的列
+titanic_data[titanic_data$Embarked == "", c('PassengerId', 'Pclass', 'Fare', 'Embarked')]
+
+```
+
+```{r}
+library(ggplot2)
+library(scales)
+
+
+# 绘制箱线图
+ggplot(titanic_data, aes(x=Embarked, y=Fare, fill=factor(Pclass))) +
+  geom_boxplot() +
+  geom_hline(aes(yintercept=80), color='red', linetype='dashed', lwd=2) +
+  scale_y_continuous(labels=dollar_format()) +
+  theme_minimal()
+
+```
+
+```{r}
+# 将Embarked列中的空字符串替换为"C"
+titanic_data$Embarked[titanic_data$Embarked == ""] <- "C"
+
+# 将Embarked列转换为因子类型
+titanic_data$Embarked <- as.factor(titanic_data$Embarked)
+
+```
+
+```{r}
+# 载入所需的包
+library(ranger)
+
+library(mice)
+
+# 假设您的数据框名为 Titanic_data
+# 首先，我们查看含有缺失值的'Age'列的相关信息
+titanic_data[is.na(titanic_data$Age),]
+
+# 设置随机种子以确保结果可重现
+set.seed(42)#129
+
+# 指定不需要进行插补的列
+exclude_columns <- c('PassengerId', 'Name', 'Ticket', 'Cabin', 'family', 'Surname', 'Survived')
+
+# 执行多重插补，使用随机森林方法
+# 注意：这里假设您的数据集中不包含名为 'family' 和 'Surname' 的列，如果有，请将其包含在 exclude_columns 中
+mice_model <- mice(titanic_data[, !names(titanic_data) %in% exclude_columns], method = 'rf')
+
+# 创建一个包含插补后数据的完整数据框
+completed_data <- complete(mice_model)
+
+# 查看插补后的数据
+head(completed_data)
+
+
+```
+```{r}
+# 绘制年龄分布图
+par(mfrow = c(1, 2))
+
+# 绘制原始数据中的年龄分布
+hist(titanic_data$Age, freq = FALSE, main = 'Age: Original Data', col = 'darkblue', ylim = c(0, 0.04))
+
+# 绘制插补后数据中的年龄分布
+hist(completed_data$Age, freq = FALSE, main = 'Age: MICE Output', col = 'skyblue', ylim = c(0, 0.04))
+
+# 使用插补后的年龄替换原始数据中的年龄
+titanic_data$Age <- completed_data$Age
+```
+
+```{r}
+# 创建一个新变量来区分未成年人和成年人
+titanic_data$Age_Group <- ifelse(titanic_data$Age < 18, 'Child', 'Adult')
+
+# 绘制未成年人和成年人的存活率
+par(mfrow = c(1, 2))  # 设置画布为1行2列
+
+# 绘制成年人的存活率
+adult_data <- titanic_data[titanic_data$Age_Group == 'Adult',]
+adult_survival_rate <- table(adult_data$Survived) / nrow(adult_data)
+barplot(adult_survival_rate, main = 'Adult Survival Rate', col = c('red', 'green'))
+
+# 绘制未成年人的存活率
+child_data <- titanic_data[titanic_data$Age_Group == 'Child',]
+child_survival_rate <- table(child_data$Survived) / nrow(child_data)
+barplot(child_survival_rate, main = 'Child Survival Rate', col = c('red', 'green'))
+
+
+
+```
+
+
+```{r}
+###（2）Name对存活率的影响
+########提取姓名中的title
+titanic_data$Title <- sapply(titanic_data$Name, FUN=function(x) {strsplit(x, split='[,.]')[[1]][2]})
+titanic_data$Title <- sub(" ","",titanic_data$Title)
+table(titanic_data$Title)                   ##查看Title的种类
+###将数量较少的Title归类为Others，并重新定义一些称呼
+Others <- c('Capt','Col','Don','Dona','Jonkheer','Lady','Major','Sir','the Countess')
+titanic_data$Title[titanic_data$Title=='Mlle'] <- 'Miss'
+titanic_data$Title[titanic_data$Title %in% c('Mme', 'Ms', 'Mrs')] <- 'Mrs'
+titanic_data$Title[titanic_data$Title %in% c('Sir', 'Lady', 'Don','the Countess','Jonkheer')] <- 'Royalty'
+titanic_data$Title[titanic_data$Title %in% c('Capt', 'Col', 'Major')] <- 'Military'
+table(titanic_data$Title)
+# 生成不同 Title 和生存状态的频率表
+survival_by_title <- table(titanic_data$Title, titanic_data$Survived)
+
+# 打印结果
+print(survival_by_title)
+
+```
+
+
+
+```{r}
+ggplot(titanic_data, aes(x = Title, fill = factor(Survived))) +
+  geom_bar(position = "dodge") +
+  labs(x = "Title", y = "Count", fill = "Survived") +
+  theme_minimal() +
+  scale_fill_manual(values = c("red", "green"), labels = c("Not Survived", "Survived"))
+```
+
+
+```{r}
+# 绘制性别与生存情况的堆叠柱状图
+ggplot(titanic_data, aes(x = factor(Survived), fill = Sex)) +
+  geom_bar(position = "stack") +
+  labs(x = "Survived", y = "Count") +
+  ggtitle("Survival by Gender")
+#由图可知，女性存活比例远大于男性
+```
+```{r}
+# 绘制存活率与座位等级的堆叠柱状图
+ggplot(titanic_data, aes(x = factor(Survived), fill = factor(Pclass))) +
+  geom_bar(position = "stack") +  # 使用position = "fill"来显示存活率
+  labs(x = "Survived", y = "Proportion") +
+  ggtitle("Survival Rate by Pclass")
+
+```
+
+
+
+
+```{r}
+library(dplyr)
+
+# 计算每个SibSp值的存活和未存活人数
+sibsp_counts <- titanic_data %>%
+  group_by(SibSp, Survived) %>%
+  summarize(Count = n())
+
+# 绘制柱状图
+ggplot(sibsp_counts, aes(x = factor(SibSp), y = Count, fill = factor(Survived))) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "SibSp", y = "Count") +
+  ggtitle("Survival by SibSp")
+#由上面两图可以看出，配偶及兄弟姐妹数SibSp和父母与子女数Parch在1-3之间时，存活率最高。而SibSp和Parch为0或大于4时，存活率明显下降。
+#因此，分析时引入新的变量家庭人口数FamilySize代替原始数据中的SibSp和Parch变量。
+
+```
+
+```{r}
+library(dplyr)
+
+# 计算每个Parch值的存活和未存活人数
+sibsp_counts <- titanic_data %>%
+  group_by(Parch, Survived) %>%
+  summarize(Count = n())
+
+# 绘制柱状图
+ggplot(sibsp_counts, aes(x = factor(Parch), y = Count, fill = factor(Survived))) +
+  geom_bar(stat = "identity", position = "stack") +
+  labs(x = "Parch", y = "Count") +
+  ggtitle("Survival by Parch")
+
+```
+
+```{r}
+titanic_data$FamilySize <- titanic_data$SibSp + titanic_data$Parch + 1
+#titanic_data$FamilySize
+ggplot(data = titanic_data[1:889,], mapping = aes(x = FamilySize, y = ..count.., fill = factor(Survived))) + 
+  geom_bar(stat = 'count', position = 'dodge') + 
+  xlab('FamilySize') + 
+  ylab('Count') + 
+  ggtitle('Different FamilySize Impact on Survival') + 
+  geom_text(stat = "count", aes(label = ..count..), position = position_dodge(width = 0.9), vjust = -0.5) + 
+  scale_x_continuous(breaks = 0:11) +
+  theme(plot.title = element_text(hjust = 0.5), legend.position = "bottom")
+
+```
+
+
+```{r}
+# 绘制存活与票价的直方图和密度曲线（不填充）
+ggplot(titanic_data, aes(x = Fare)) +
+  geom_histogram(binwidth = 10, alpha = 0.5, aes(fill = factor(Survived))) +
+  geom_density(aes(y = ..count.. * 10, color = factor(Survived)), size = 1) +
+  labs(x = "Fare", y = "Count/Density") +
+  ggtitle("Survival by Fare (Histogram with Density)")
+
+
+
+```
+
+```{r}
+# 绘制存活与登船港口的堆叠柱状图
+ggplot(titanic_data, aes(x = factor(Survived), fill = Embarked)) +
+  geom_bar(position = "stack") +
+  labs(x = "Survived", y = "Count") +
+  ggtitle("Survival by Embarked Port (Stacked Bar Chart)")
+
+```
+
+
+```{r 转换为因子}
+# 选择重要的特征列
+titanic_data <- titanic_data %>% select(Title,Survived, Pclass, Sex, Age, SibSp, Parch, Fare, Embarked,FamilySize,Age_Group)
+print(titanic_data)
+
+
+```
+
+
+```{r 数据采样-分割数据集}
+suppressWarnings(library(caret))
+
+
+# 分割数据集
+set.seed(42)
+titanic_data$Survived <- as.factor(titanic_data$Survived)
+titanic_data$Pclass <- as.factor(titanic_data$Pclass)
+titanic_data$Sex <- as.factor(titanic_data$Sex)
+titanic_data$Embarked <- as.factor(titanic_data$Embarked)
+titanic_data$Title <- as.factor(titanic_data$Title)
+titanic_data$Age_Group <- as.factor(titanic_data$Age_Group)
+training_index <- createDataPartition(titanic_data$Survived, p = 0.8, list = FALSE)
+train_data <- titanic_data[training_index, ]
+test_data <- titanic_data[-training_index, ]
+
+
+```
+
+
+
+
+
+
+
+```{r 建立逻辑回归模型}
+# 建立逻辑回归模型
+model_1 <- glm(Survived ~ Title + Pclass + Sex + Age +FamilySize + Fare + Embarked, data = train_data, family = binomial())
+summary(model_1)
+```
+```{r}
+# 模型预测和评估
+predictions <- predict(model_1, newdata = test_data, type = "response")
+predictions <- ifelse(predictions > 0.5, 1, 0)
+conf_matrix <- table(test_data$Survived, predictions)
+print(conf_matrix)
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Accuracy: ", accuracy))
+```
+
+```{r}
+
+# 建立逻辑回归模型
+model <- glm(Survived ~ Title+ Pclass + Sex + Age + FamilySize , data = train_data, family = binomial())
+summary(model)
+```
+
+
+```{r}
+# 模型预测和评估
+predictions <- predict(model, newdata = test_data, type = "response")
+predictions <- ifelse(predictions > 0.5, 1, 0)
+conf_matrix <- table(test_data$Survived, predictions)
+print(conf_matrix)
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Accuracy: ", accuracy))
+```
+
+```{r}
+# 特征重要性
+importance <- summary(model)$coefficients
+print(importance)
+```
+```{r}
+# 建立逻辑回归模型
+model_1 <- glm(Survived ~ Title+ Pclass + Sex + Age_Group + FamilySize+ Fare + Embarked, data = train_data, family = binomial())
+summary(model_1)
+# 模型预测和评估
+predictions <- predict(model_1, newdata = test_data, type = "response")
+predictions <- ifelse(predictions > 0.5, 1, 0)
+conf_matrix <- table(test_data$Survived, predictions)
+print(conf_matrix)
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Accuracy: ", accuracy))
+```
+
+```{r}
+precision <- sum(conf_matrix[2,2]) / sum(conf_matrix[,2])
+recall <- sum(conf_matrix[2,2]) / sum(conf_matrix[2,])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+print(paste("Precision: ", precision))
+print(paste("Recall: ", recall))
+print(paste("F1 Score: ", f1_score))
+
+```
+```{r}
+# 载入ROCR包
+library(ROCR)
+
+# 定义plot_roc函数
+plot_roc <- function(fit, actual, predicted) {
+  pred <- prediction(predicted, actual)
+  auc <- performance(pred, "auc")@y.values[[1]]
+  roc_performance <- performance(pred, "tpr", "fpr")
+
+  plot(roc_performance, colorize = TRUE, lwd = 3, main = "ROC Curve")
+  abline(a = 0, b = 1, lty = 2, lwd = 3, col = "black") # 对角线
+
+  return(auc) # 返回AUC值
+}
+
+# 假设你的实际标签和模型预测概率是这样的
+actual_labels <- test_data$Survived # 你的实际标签
+predicted_scores <- predict(model, newdata = test_data, type = "response") # 你的模型预测概率
+
+# 调用plot_roc函数来绘制ROC曲线和计算AUC
+auc_value <- plot_roc(model, actual_labels, predictions)
+
+# 打印AUC值
+print(auc_value)
+
+```
+
+
+```{r}
+logit_model <- glm(Survived ~ Age + Sex, family = binomial(), data = titanic_data)
+null_model <- glm(Survived ~ 1, family = binomial(), data = titanic_data)
+
+ll_full <- logLik(logit_model)
+ll_null <- logLik(null_model)
+r_squared <- 1 - (ll_full / ll_null)
+r_squared
+```
+
