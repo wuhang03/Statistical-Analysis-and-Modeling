@@ -1,6 +1,8 @@
 ---
 title: "titanic"
-output: html_notebook
+output:
+  word_document: default
+  html_notebook: default
 ---
 
 ```{r}
@@ -37,39 +39,61 @@ sapply(titanic_data,function(x) sum(is.na(x)))
 sapply(titanic_data,function(x) sum(x == ""))
 
 ```
+
+```{r}
+# 将年龄分为几个区间
+titanic_data$Age_Group <- cut(titanic_data$Age, breaks = c(0, 18, 60, Inf), labels = c("Child",  "Adult", "Senior"))
+
+# 绘制年龄组与生存情况的堆叠柱状图
+ggplot(titanic_data, aes(x = factor(Survived), fill = Age_Group)) +
+  geom_bar(position = "stack") +
+  geom_text(stat = "count", aes(label = ..count..), position = position_stack(vjust = 0.5)) +
+  labs(x = "Survived", y = "Count", fill = "Age Group") +
+  ggtitle("Survival by Age Group")
+
+```
+```{r}
+ggplot(data = titanic_data[!is.na(titanic_data$Age), ], aes(x = Age, group = Survived, color = factor(Survived))) + 
+  geom_line(stat = "count", aes(y = ..count..), binwidth = 5) + 
+  labs(title = "How Age Impacts Survivor", x = "Age", y = "Count", color = "Survived") +
+  theme_minimal()
+
+```
+
+
 ```{r}
 # 查找Embarked缺失值
-#Embarked.na <- titanic_data$Embarked
-#na_indices <-which(Embarked.na %in% "")
-#titanic_data <- titanic_data[-na_indices, ]
-#print(titanic_data)
+Embarked.na <- titanic_data$Embarked
+na_indices <-which(Embarked.na %in% "")
+titanic_data <- titanic_data[-na_indices, ]
+print(titanic_data)
 ```
 ```{r}
 # 选择Embarked列为空字符串的行，并且只选择特定的列
-titanic_data[titanic_data$Embarked == "", c('PassengerId', 'Pclass', 'Fare', 'Embarked')]
+#titanic_data[titanic_data$Embarked == "", c('PassengerId', 'Pclass', 'Fare', 'Embarked')]
 
 ```
 
 ```{r}
-library(ggplot2)
-library(scales)
+#library(ggplot2)
+#library(scales)
 
 
 # 绘制箱线图
-ggplot(titanic_data, aes(x=Embarked, y=Fare, fill=factor(Pclass))) +
-  geom_boxplot() +
-  geom_hline(aes(yintercept=80), color='red', linetype='dashed', lwd=2) +
-  scale_y_continuous(labels=dollar_format()) +
-  theme_minimal()
+#ggplot(titanic_data, aes(x=Embarked, y=Fare, fill=factor(Pclass))) +
+#  geom_boxplot() +
+#  geom_hline(aes(yintercept=80), color='red', linetype='dashed', lwd=2) +
+#  scale_y_continuous(labels=dollar_format()) +
+#  theme_minimal()
 
 ```
 
 ```{r}
 # 将Embarked列中的空字符串替换为"C"
-titanic_data$Embarked[titanic_data$Embarked == ""] <- "C"
+#titanic_data$Embarked[titanic_data$Embarked == ""] <- "C"
 
 # 将Embarked列转换为因子类型
-titanic_data$Embarked <- as.factor(titanic_data$Embarked)
+#titanic_data$Embarked <- as.factor(titanic_data$Embarked)
 
 ```
 
@@ -101,6 +125,9 @@ head(completed_data)
 
 
 ```
+
+
+
 ```{r}
 # 绘制年龄分布图
 par(mfrow = c(1, 2))
@@ -118,6 +145,8 @@ titanic_data$Age <- completed_data$Age
 ```{r}
 # 创建一个新变量来区分未成年人和成年人
 titanic_data$Age_Group <- ifelse(titanic_data$Age < 18, 'Child', 'Adult')
+#titanic_data$Age_Group <- ifelse(titanic_data$Age < 18, 'Child', 
+#                                  ifelse(titanic_data$Age <= 40, 'Adult', 'Senior'))
 
 # 绘制未成年人和成年人的存活率
 par(mfrow = c(1, 2))  # 设置画布为1行2列
@@ -131,6 +160,10 @@ barplot(adult_survival_rate, main = 'Adult Survival Rate', col = c('red', 'green
 child_data <- titanic_data[titanic_data$Age_Group == 'Child',]
 child_survival_rate <- table(child_data$Survived) / nrow(child_data)
 barplot(child_survival_rate, main = 'Child Survival Rate', col = c('red', 'green'))
+# 绘制未成年人的存活率
+#senior_data <- titanic_data[titanic_data$Age_Group == 'Senior',]
+#senior_survival_rate <- table(senior_data$Survived) / nrow(senior_data)
+#barplot(senior_survival_rate, main = 'Senior Survival Rate', col = c('red', 'green'))
 
 
 
@@ -147,8 +180,10 @@ table(titanic_data$Title)                   ##查看Title的种类
 Others <- c('Capt','Col','Don','Dona','Jonkheer','Lady','Major','Sir','the Countess')
 titanic_data$Title[titanic_data$Title=='Mlle'] <- 'Miss'
 titanic_data$Title[titanic_data$Title %in% c('Mme', 'Ms', 'Mrs')] <- 'Mrs'
-titanic_data$Title[titanic_data$Title %in% c('Sir', 'Lady', 'Don','the Countess','Jonkheer')] <- 'Royalty'
-titanic_data$Title[titanic_data$Title %in% c('Capt', 'Col', 'Major')] <- 'Military'
+titanic_data$Title[titanic_data$Title %in% c('Sir', 'Lady', 'Don','the Countess','Jonkheer','Capt', 'Col', 'Major', 'Rev', 'Dr')] <- 'Other'
+
+#titanic_data$Title[titanic_data$Title %in% c('Sir', 'Lady', 'Don','the Countess','Jonkheer')] <- 'Royalty'
+#titanic_data$Title[titanic_data$Title %in% c('Capt', 'Col', 'Major')] <- 'Military'
 table(titanic_data$Title)
 # 生成不同 Title 和生存状态的频率表
 survival_by_title <- table(titanic_data$Title, titanic_data$Survived)
@@ -170,18 +205,20 @@ ggplot(titanic_data, aes(x = Title, fill = factor(Survived))) +
 
 
 ```{r}
-# 绘制性别与生存情况的堆叠柱状图
 ggplot(titanic_data, aes(x = factor(Survived), fill = Sex)) +
   geom_bar(position = "stack") +
+  geom_text(stat = "count", aes(label = ..count..), position = position_stack(vjust = 0.5)) +
   labs(x = "Survived", y = "Count") +
   ggtitle("Survival by Gender")
+
 #由图可知，女性存活比例远大于男性
 ```
 ```{r}
 # 绘制存活率与座位等级的堆叠柱状图
 ggplot(titanic_data, aes(x = factor(Survived), fill = factor(Pclass))) +
-  geom_bar(position = "stack") +  # 使用position = "fill"来显示存活率
-  labs(x = "Survived", y = "Proportion") +
+  geom_bar(position = "stack") +
+  geom_text(stat = "count", aes(label = ..count..), position = position_stack(vjust = 0.5)) +
+  labs(x = "Survived", y = "Count") +
   ggtitle("Survival Rate by Pclass")
 
 ```
@@ -254,8 +291,11 @@ ggplot(titanic_data, aes(x = Fare)) +
 # 绘制存活与登船港口的堆叠柱状图
 ggplot(titanic_data, aes(x = factor(Survived), fill = Embarked)) +
   geom_bar(position = "stack") +
+  geom_text(aes(label = ..count..), stat = "count", position = position_stack(vjust = 0.5)) +
   labs(x = "Survived", y = "Count") +
-  ggtitle("Survival by Embarked Port (Stacked Bar Chart)")
+  ggtitle("Survival by Embarked")
+
+
 
 ```
 
@@ -296,7 +336,7 @@ test_data <- titanic_data[-training_index, ]
 
 ```{r 建立逻辑回归模型}
 # 建立逻辑回归模型
-model_1 <- glm(Survived ~ Title + Pclass + Sex + Age +FamilySize + Fare + Embarked, data = train_data, family = binomial())
+model_1 <- glm(Survived ~ Title + Pclass + Age +FamilySize + Fare + Embarked, data = train_data, family = binomial())
 summary(model_1)
 ```
 ```{r}
@@ -308,43 +348,6 @@ print(conf_matrix)
 accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
 print(paste("Accuracy: ", accuracy))
 ```
-
-```{r}
-
-# 建立逻辑回归模型
-model <- glm(Survived ~ Title+ Pclass + Sex + Age + FamilySize , data = train_data, family = binomial())
-summary(model)
-```
-
-
-```{r}
-# 模型预测和评估
-predictions <- predict(model, newdata = test_data, type = "response")
-predictions <- ifelse(predictions > 0.5, 1, 0)
-conf_matrix <- table(test_data$Survived, predictions)
-print(conf_matrix)
-accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
-print(paste("Accuracy: ", accuracy))
-```
-
-```{r}
-# 特征重要性
-importance <- summary(model)$coefficients
-print(importance)
-```
-```{r}
-# 建立逻辑回归模型
-model_1 <- glm(Survived ~ Title+ Pclass + Sex + Age_Group + FamilySize+ Fare + Embarked, data = train_data, family = binomial())
-summary(model_1)
-# 模型预测和评估
-predictions <- predict(model_1, newdata = test_data, type = "response")
-predictions <- ifelse(predictions > 0.5, 1, 0)
-conf_matrix <- table(test_data$Survived, predictions)
-print(conf_matrix)
-accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
-print(paste("Accuracy: ", accuracy))
-```
-
 ```{r}
 precision <- sum(conf_matrix[2,2]) / sum(conf_matrix[,2])
 recall <- sum(conf_matrix[2,2]) / sum(conf_matrix[2,])
@@ -353,8 +356,98 @@ f1_score <- 2 * (precision * recall) / (precision + recall)
 print(paste("Precision: ", precision))
 print(paste("Recall: ", recall))
 print(paste("F1 Score: ", f1_score))
+```
+
+
+```{r}
+
+# 建立逻辑回归模型
+model_2 <- glm(Survived ~ Title+ Pclass  + Age  +FamilySize, data = train_data, family = binomial())
+summary(model_2)
+```
+```{r}
+library(car)
+# 计算模型的VIF值
+vif_model <- vif(model_1)
+print(vif_model)
+```
+
+
+```{r}
+# 模型预测和评估
+predictions <- predict(model_2, newdata = test_data, type = "response")
+predictions <- ifelse(predictions > 0.5, 1, 0)
+conf_matrix <- table(test_data$Survived, predictions)
+print(conf_matrix)
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Accuracy: ", accuracy))
+```
+```{r}
+precision <- sum(conf_matrix[2,2]) / sum(conf_matrix[,2])
+recall <- sum(conf_matrix[2,2]) / sum(conf_matrix[2,])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+print(paste("Precision: ", precision))
+print(paste("Recall: ", recall))
+print(paste("F1 Score: ", f1_score))
+```
+
+
+```{r}
+# 特征重要性
+importance <- summary(model_2)$coefficients
+print(importance)
+```
+```{r}
+# 建立逻辑回归模型
+model_3 <- glm(Survived ~ Sex+Title+ Pclass + Age_Group + FamilySize+ Fare + Embarked, data = train_data, family = binomial())
+summary(model_3)
+# 模型预测和评估
+predictions <- predict(model_3, newdata = test_data, type = "response")
+predictions <- ifelse(predictions > 0.5, 1, 0)
+conf_matrix <- table(test_data$Survived, predictions)
+print(conf_matrix)
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Accuracy: ", accuracy))
+precision <- sum(conf_matrix[2,2]) / sum(conf_matrix[,2])
+recall <- sum(conf_matrix[2,2]) / sum(conf_matrix[2,])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+print(paste("Precision: ", precision))
+print(paste("Recall: ", recall))
+print(paste("F1 Score: ", f1_score))
+```
+
+
+
+```{r}
+library(car)
+# 计算模型的VIF值
+vif_model <- vif(model_3)
+print(vif_model)
 
 ```
+```{r}
+# 建立逻辑回归模型
+model_4 <- glm(Survived ~ Title+ Pclass + Age_Group + FamilySize, data = train_data, family = binomial())
+summary(model_4)
+# 模型预测和评估
+predictions <- predict(model_4, newdata = test_data, type = "response")
+predictions <- ifelse(predictions > 0.5, 1, 0)
+conf_matrix <- table(test_data$Survived, predictions)
+print(conf_matrix)
+accuracy <- sum(diag(conf_matrix)) / sum(conf_matrix)
+print(paste("Accuracy: ", accuracy))
+precision <- sum(conf_matrix[2,2]) / sum(conf_matrix[,2])
+recall <- sum(conf_matrix[2,2]) / sum(conf_matrix[2,])
+f1_score <- 2 * (precision * recall) / (precision + recall)
+
+print(paste("Precision: ", precision))
+print(paste("Recall: ", recall))
+print(paste("F1 Score: ", f1_score))
+```
+
+
 ```{r}
 # 载入ROCR包
 library(ROCR)
@@ -373,10 +466,10 @@ plot_roc <- function(fit, actual, predicted) {
 
 # 假设你的实际标签和模型预测概率是这样的
 actual_labels <- test_data$Survived # 你的实际标签
-predicted_scores <- predict(model, newdata = test_data, type = "response") # 你的模型预测概率
+predicted_scores <- predict(model_2, newdata = test_data, type = "response") # 你的模型预测概率
 
 # 调用plot_roc函数来绘制ROC曲线和计算AUC
-auc_value <- plot_roc(model, actual_labels, predictions)
+auc_value <- plot_roc(model_2, actual_labels, predicted_scores)
 
 # 打印AUC值
 print(auc_value)
@@ -384,13 +477,5 @@ print(auc_value)
 ```
 
 
-```{r}
-logit_model <- glm(Survived ~ Age + Sex, family = binomial(), data = titanic_data)
-null_model <- glm(Survived ~ 1, family = binomial(), data = titanic_data)
 
-ll_full <- logLik(logit_model)
-ll_null <- logLik(null_model)
-r_squared <- 1 - (ll_full / ll_null)
-r_squared
-```
 
