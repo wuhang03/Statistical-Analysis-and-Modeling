@@ -1,0 +1,523 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+## 数据预处理
+
+```{r}
+# 导入数据
+data <- read.csv("stock.csv")
+
+# 打印数据结构
+str(data)
+
+
+# 统计data数据框的行数
+num_rows <- nrow(data)
+print(num_rows)
+```
+
+
+预处理
+在这个数据集中，有一些预处理步骤可能需要进行：
+1. 将日期列从字符类型转换为日期类型。
+2. 将公司名称转换为因子类型，因为它是一个分类变量。
+3. 将Close.Last、Open、High和Low列中的美元符号去掉，并将这些列转换为数值类型。
+4. 检查是否有缺失值，如果有，需要决定如何处理它们（例如，删除含有缺失值的行，或者用某种方法填充缺失值）。
+
+```{r}
+# 检查data中是否有空值
+if (any(is.na(data))) {
+  print("There are NA values in the data frame.")
+} else {
+  print("There are no NA values in the data frame.")
+}
+```
+
+```{r}
+# 将日期字符串中的 "/" 和 "-" 替换为 "."
+data$Date <- gsub("/|-", ".", data$Date)
+
+# 将日期字符串的格式从 "mm.dd.yyyy" 转换为 "yyyy.mm.dd"
+data$Date <- format(as.Date(data$Date, format = "%m.%d.%Y"), "%Y-%m-%d")
+
+# 将日期字符串转换为日期
+data$Date <- as.Date(data$Date)
+
+# 检查Date列的数据类型
+print(class(data$Date))
+```
+
+```{r}
+# 将Company列转换为因子类型
+data$Company <- factor(data$Company)
+
+# 查看Company列中的所有因子级别
+company_levels <- levels(data$Company)
+print(company_levels)
+```
+
+```{r}
+# 去掉美元符号并转换为数字
+data$Open <- as.numeric(gsub("\\$", "", data$Open))
+data$High <- as.numeric(gsub("\\$", "", data$High))
+data$Low <- as.numeric(gsub("\\$", "", data$Low))
+data$Close.Last <- as.numeric(gsub("\\$", "", data$Close.Last))
+```
+
+```{r}
+# 设置digits选项
+options(digits = 10)
+# 再次打印Close.Last列的前10个值检查小数
+print(data$Close.Last[1:10])
+# 检查全部数据类型是否达标
+str(data)
+```
+
+## 数据分析&结论
+
+### 可视化
+```{r}
+# 安装必要的包
+install.packages(c("ggplot2", "reshape2", "scales"))
+
+# 加载必要的包
+library(ggplot2)
+library(reshape2)
+library(scales)
+
+```
+
+建立折线图
+```{r}
+# 创建折线图
+ggplot(data, aes(x = Date, y = Close.Last, color = Company)) +
+  geom_line() +
+  theme_minimal() +
+  labs(title = "公司股票价格折线图", x = "日期", y = "收盘价", color = "公司")
+```
+
+
+建立平均股票价格条形图
+```{r}
+# 计算每个公司的平均股票价格
+average_price <- aggregate(Close.Last ~ Company, data, mean)
+
+# 创建条形图
+ggplot(average_price, aes(x = Company, y = Close.Last, fill = Company)) +
+  geom_bar(stat = "identity") +
+  theme_minimal() +
+  labs(title = "每个公司的平均股票价格", x = "公司", y = "平均收盘价", fill = "公司")
+```
+
+创建每个日期的股票价格总和的热图
+
+```{r}
+# 计算每个日期的股票价格总和
+total_price <- aggregate(Close.Last ~ Date + Company, data, sum)
+
+# 将数据框转换为宽格式
+wide_data <- dcast(total_price, Date ~ Company, value.var = "Close.Last")
+
+# 创建热图
+ggplot(melt(wide_data, id.vars = "Date"), aes(x = Date, y = variable, fill = value)) +
+  geom_tile() +
+  theme_minimal() +
+  scale_fill_gradient(low = "white", high = "red") +
+  labs(title = "每个日期的股票价格总和", x = "日期", y = "公司", fill = "总收盘价")
+```
+
+### 相关性分析
+```{r}
+# 安装corrplot包
+install.packages("corrplot")
+
+# 加载corrplot包
+library(corrplot)
+```
+
+将数据转换成宽格式，以便计算每个公司的收盘价之间的相关性
+```{r}
+# 加载reshape2包
+library(reshape2)
+
+# 计算每个日期的股票价格总和
+total_price <- aggregate(Close.Last ~ Date + Company, data, sum)
+
+# 将数据框转换为宽格式
+wide_data <- dcast(total_price, Date ~ Company, value.var = "Close.Last")
+```
+
+计算相关系数并生成相关系数矩阵的可视化
+```{r}
+# 计算相关系数
+cor_matrix <- cor(wide_data[,-1], use = "pairwise.complete.obs")
+
+# 生成相关系数矩阵的可视化
+corrplot(cor_matrix, method = "circle")
+```
+
+
+这段代码首先使用 `cor` 函数计算相关系数，然后使用 `corrplot` 函数生成相关系数矩阵的可视化。`method = "circle"` 参数表示使用圆形来表示相关系数，圆形的大小和颜色都与相关系数的绝对值成正比。
+
+
+### 股票不动性分析
+股票的不动性通常通过计算股票价格的波动率来衡量。波动率是一个统计指标，用于衡量股票价格的变动程度。波动率越高，股票的价格变动越大，不动性越低；反之，波动率越低，股票的价格变动越小，不动性越高。
+
+可以使用 `quantmod` 包来计算股票的波动率。以下是相关的代码：
+
+首先，我们需要安装和加载 `quantmod` 包。
+
+
+
+```{r}
+# 安装quantmod包
+install.packages("quantmod")
+
+# 加载quantmod包
+library(quantmod)
+```
+
+然后，我们可以计算每个公司的股票价格的波动率。
+```{r}
+# 创建一个空的数据框来存储结果
+volatility <- data.frame(Company = character(), Volatility = numeric())
+
+# 对每个公司计算波动率
+for (company in unique(data$Company)) {
+  # 提取该公司的数据
+  company_data <- data[data$Company == company, ]
+  
+  # 计算波动率
+  company_volatility <- sd(diff(log(company_data$Close.Last)))
+  
+  # 将结果添加到数据框中
+  volatility <- rbind(volatility, data.frame(Company = company, Volatility = company_volatility))
+}
+
+# 打印结果
+print(volatility)
+```
+
+
+预测股票价格的波动率通常使用 GARCH（广义自回归条件异方差）模型。可以使用 `rugarch` 包来拟合 GARCH 模型。以下是相关的代码：
+
+首先，我们需要安装和加载 `rugarch` 包。
+```{r}
+# 安装rugarch包
+install.packages("rugarch")
+
+# 加载rugarch包
+library(rugarch)
+```
+```{r}
+# 创建一个空的数据框来存储结果
+forecast <- data.frame(Company = character(), Forecast = numeric())
+
+# 对每个公司拟合 GARCH 模型并预测未来的波动率
+for (company in unique(data$Company)) {
+  # 提取该公司的数据
+  company_data <- data[data$Company == company, ]
+  
+  # 计算对数收益率
+  returns <- diff(log(company_data$Close.Last))
+  
+  # 拟合 GARCH 模型
+  model <- ugarchspec(variance.model = list(model = "sGARCH", garchOrder = c(1, 1)), mean.model = list(armaOrder = c(0, 0), include.mean = FALSE), distribution.model = "std")
+  fit <- ugarchfit(spec = model, data = returns)
+  
+  # 预测未来的波动率
+  garch_forecast <- ugarchforecast(fit, n.ahead = 1)
+  
+  # 将结果添加到数据框中
+  forecast <- rbind(forecast, data.frame(Company = company, Forecast = as.numeric(sigma(garch_forecast))))
+}
+
+# 打印结果
+print(forecast)
+```
+
+这段代码首先创建了一个空的数据框来存储结果，然后对每个公司的股票价格拟合 GARCH 模型，并预测未来的波动率。拟合 GARCH 模型的方法是先计算股票价格的对数收益率，然后使用 `ugarchspec` 和 `ugarchfit` 函数拟合 GARCH 模型。预测未来的波动率的方法是使用 `ugarchforecast` 函数，`n.ahead = 1` 参数表示预测未来 1 期的波动率。最后，将结果添加到数据框中，并打印结果。
+
+### 推荐最佳潜力股
+我们可以选择波动率较低（表示风险较低）和历史收益率较高（表示过去的表现良好）的股票。
+
+以下展示了如何在 R 中使用这些指标来筛选潜力股：
+
+```{r}
+# 计算每个公司的历史收益率
+returns <- data.frame(Company = character(), Return = numeric())
+for (company in unique(data$Company)) {
+  # 提取该公司的数据
+  company_data <- data[data$Company == company, ]
+
+  # 按日期排序
+  company_data <- company_data[order(company_data$Date), ]
+
+  # 计算收益率
+  company_return <- (last(company_data$Close.Last) - first(company_data$Close.Last)) / first(company_data$Close.Last)
+
+  # 将结果添加到数据框中
+  returns <- rbind(returns, data.frame(Company = company, Return = company_return))
+}
+
+# 合并波动率和收益率
+metrics <- merge(volatility, returns, by = "Company")
+
+# 筛选波动率在前 25% 且收益率在后 25% 的公司
+potential_stocks <- metrics[metrics$Volatility < quantile(metrics$Volatility, 0.5) & metrics$Return > quantile(metrics$Return, 0.5), ]
+
+# 打印所有公司结果
+print(metrics)
+
+# 打印推荐结果
+print(potential_stocks)
+```
+
+
+这段代码首先计算了每个公司的历史收益率，然后将波动率和收益率合并到一个数据框中。然后，它筛选出波动率在后 50% 且收益率在前 50% 的公司。这些公司的股票可能具有较高的潜力，因为它们的风险较低且过去的表现良好。
+所以被推荐的最佳潜力股就是AAPL
+
+## 时间序列预处理
+  时间序列预处理主要包括两个部分，分别是平稳性检验和纯随机性检验。
+  
+### 平稳性检验
+  平稳性检验是
+  使用图检验的方式
+```{r}
+
+
+# 绘制收盘价的时间序列图
+ggplot(data, aes(x = Date, y = Close.Last, color=Company)) +
+  geom_line() +
+  theme_minimal() +
+  labs(x = "Date", y = "Close.Last", title = "Time Series Plot of Close.Last")
+
+ggplot(data, aes(x = Date, y = Close.Last,color=Company)) +
+  geom_line() +
+  labs(x = "Date", y = "Close.Last", title = "Time Series Plot of Close.Last") +
+  facet_wrap(~ Company)
+
+# 创建一个空的数据框来存储检验结果
+test_results <- data.frame(Company = character(), Test_statistic = numeric(), p_value = numeric())
+
+
+```
+  在
+
+
+  同时还可以结合自相关图的方法进行随机性检验
+```{r}
+
+
+# 绘制自相关图
+acf(data$Close.Last, main="Autocorrelation of Close.Last")
+# 假设你的数据框名为 data，公司名的列名为 Company
+companies <- unique(data$Company)
+
+# 为每个公司生成自相关图
+for (company in companies) {
+   # 提取该公司的数据
+   company_data <- data[data$Company == company, ]
+
+   # 绘制自相关图
+   acf(company_data$Close.Last, main = paste("Autocorrelation of", company))
+}
+```
+
+    根据上图显示的结果，每个属性对应的自相关系数长期在0轴一侧且一直较大且随Lag值增大而缓慢下降，说明有明显明显单调趋势，不是平稳序列。
+    
+```{r}
+
+library(tseries)
+# 对每个公司进行检验
+for (company in unique(data$Company)) {
+  # 提取该公司的数据
+  company_data <- data[data$Company == company, ]
+  
+  # 按日期排序
+  company_data <- company_data[order(company_data$Date), ]
+  
+  # 进行ADF测试
+  test_result <- adf.test(company_data$Close.Last)
+  
+  # 将结果添加到数据框中
+  test_results <- rbind(test_results, data.frame(Company = company, Test_statistic = test_result$statistic, p_value = round(test_result$p.value, 6)))
+}
+
+# 打印所有公司的检验结果
+print(test_results)
+
+```
+    
+```{r}
+for (company in unique(data$Company)) {
+  # 提取该公司的数据
+  company_data <- data[data$Company == company, ]
+  
+  # 按日期排序
+  company_data <- company_data[order(company_data$Date), ]
+  
+  ndiffs_value <- ndiffs(company_data$Close.Last)
+  
+  print(paste("ndiffs for", company, ":", ndiffs_value))
+}
+```
+    
+    在ADF测试中，我们设立以下假设：
+
+原假设（H0）：时间序列是非平稳的。
+备择假设（H1）：时间序列是平稳的。
+然后，我们计算ADF统计量，并根据该统计量的分布计算p值。p值是观察到的数据（或更极端的数据）在原假设为真的情况下出现的概率。
+
+我们将p值与预先设定的显著性水平（α）进行比较，以决定是否拒绝原假设：
+
+如果p值小于α，那么我们拒绝原假设，得出结论：时间序列是平稳的。这意味着我们有足够的证据认为时间序列的统计性质不会随时间改变。
+如果p值大于或等于α，那么我们不能拒绝原假设，也就不能得出时间序列是平稳的结论。这意味着我们没有足够的证据认为时间序列的统计性质不会随时间改变。
+
+  这里我们设置α为0.05,则不能拒绝原假设，所以上述这些时间序列都是不平稳的。
+    
+    
+    结合两种图检验的方式可以得出，所有的时间序列都是非平稳的，因此需要首先进行平稳化之后再进行纯随机性判断。
+    
+### 平稳化
+```{r}
+# 对data$Close.Last进行一阶差分
+data$Close.Last.Diff <- c(NA, diff(data$Close.Last))
+
+
+# 绘制一阶差分后的时间序列图
+library(ggplot2)
+ggplot(data, aes(x = Date, y = Close.Last.Diff, color = Company)) +
+  geom_line() +
+  theme_minimal() +
+  labs(x = "Date", y = "First Differences", title = "Time Series Plot of the First Differences")
+
+ggplot(data, aes(x = Date, y = Close.Last.Diff, color = Company)) +
+  geom_line() +
+  labs(x = "Date", y = "First Differences", title = "Time Series Plot of the First Differences") +
+  facet_wrap(~ Company)
+
+library(tseries)
+
+# 初始化一个数据框来存储结果
+adf_results <- data.frame(Company = character(), TestStatistic = numeric(), PValue = numeric(), stringsAsFactors = FALSE)
+
+# 对每个公司进行ADF测试
+for (company in unique(data$Company)) {
+  # 提取该公司的数据
+  company_data <- data[data$Company == company, ]
+  
+  # 计算一阶差分并去除NA值
+  company_data_diff <- diff(company_data$Close.Last)
+  company_data_diff <- na.omit(data.frame(Date = company_data$Date[-1], Close.Last.Diff = company_data_diff, Company = company_data$Company[-1]))
+  
+  # 进行ADF测试
+  adf_result <- adf.test(company_data_diff$Close.Last.Diff)
+  
+  # 将结果添加到数据框中
+  adf_results <- rbind(adf_results, data.frame(Company = company, TestStatistic = adf_result$statistic, PValue = round(adf_result$p.value,4)))
+}
+
+# 打印结果
+print(adf_results)
+
+
+
+```   
+
+
+
+    进行一阶差分之后的时间序列可以被认为是平稳的。
+    
+### 纯随机性检验
+
+```{r}
+
+test_results <- data.frame(Company = character(), X_squared = numeric(), df = integer(), p_value = numeric())
+
+# 对每个公司进行检验
+for (company in unique(data$Company)) {
+  # 提取该公司的数据
+  company_data <- data[data$Company == company, ]
+  
+  # 对Close.Last进行二阶差分，并在结果前添加两个NA值
+  company_data$Close.Last.Diff2 <- c(NA, NA, diff(diff(company_data$Close.Last)))
+  
+  # 使用Box-Pierce test检验时间序列的白噪声
+  test_result <- Box.test(company_data$Close.Last.Diff2, type = "Ljung-Box")
+  
+  # 将结果添加到数据框中，p-value保留6位小数
+  test_results <- rbind(test_results, data.frame(Company = company, X_squared = test_result$statistic, df = test_result$parameter, p_value = round(test_result$p.value, 6)))
+}
+
+# 打印所有公司的检验结果
+print(test_results)
+
+
+```
+  通过纯白噪声检验得出，进行二阶差分后的不是纯随机性序列，因此对我们来说有预测的价值
+  
+## 数据建模及模型质量评估
+  
+```{r}
+# 安装并加载forecast包
+library(forecast)
+
+# 初始化一个列表来存储每个公司的ARIMA模型
+arima_models <- list()
+
+# 对每个公司进行ARIMA模型拟合
+for (company in unique(data$Company)) {
+  # 提取该公司的数据
+  company_data <- data[data$Company == company, ]
+  
+  # 使用auto.arima函数自动选择最佳的ARIMA模型
+  fit <- auto.arima(company_data$Close.Last)
+  
+  # 将模型添加到列表中
+  arima_models[[company]] <- fit
+}
+
+# 打印每个公司的ARIMA模型
+for (company in names(arima_models)) {
+  print(paste("ARIMA model for", company))
+  print(arima_models[[company]])
+}
+
+
+```
+  
+
+```{r}
+# 对每个公司的ARIMA模型进行检验
+for (company in names(arima_models)) {
+  print(paste("Residual checks for model of", company))
+  
+  # 检查模型残差
+  checkresiduals(arima_models[[company]])
+}
+```
+
+
+```{r}
+# 对每个公司的ARIMA模型进行检验
+for (company in names(arima_models)) {
+  print(paste("Model checks for", company))
+  
+  # 提取模型残差
+  residuals <- residuals(arima_models[[company]])
+  
+  # 绘制QQ图
+  qqnorm(residuals)
+  qqline(residuals)
+  
+  # 进行Ljung-Box测试
+  lb_test <- Box.test(residuals, type = "Ljung-Box")
+  
+  # 打印Ljung-Box测试的结果
+  print(lb_test)
+}
+```
+
