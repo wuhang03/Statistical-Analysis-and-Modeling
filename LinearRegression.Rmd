@@ -1,0 +1,212 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+# 基于LM的教育动态预测模型
+
+```{r}
+data<-read.csv("education.csv")
+#有一个国家名字是乱码 避免一会的报错
+Sys.setlocale("LC_CTYPE", "Chinese_China.936")
+```
+
+## 数据查看
+
+考虑到数据从现实中来，必然存在一些统计或填写的错误。在本数据中，主要表现为统计结果为"0"的数据。那么首先统计每一行和每一列（除了第一列之外）中为0的数据个数。
+
+```{r}
+#统计每一行
+library(ggplot2)
+#剔除country列以及要研究的两列
+p_data <- data[, -1]
+p_data <- sapply(p_data, as.numeric)
+p_data[is.na(p_data)] <- 0
+row_zeros_count <- apply(p_data, 1, function(row) sum(row == 0))
+plot_data <- data.frame(Country = rownames(data), ZeroCount = row_zeros_count)
+ggplot(plot_data, aes(x = Country, y = ZeroCount, fill = ZeroCount)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient(low = "blue", high = "red") +  # 使用渐变色
+  labs(title = "Number of Zeros in Each Country", x = "Country", y = "Number of Zeros") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+#打印平均每一行为0的数量
+print(sum(row_zeros_count)/length(row_zeros_count))
+```
+
+```{r}
+#查看每一列
+column_zeros_count <- colSums(p_data == 0)
+plot_data <- data.frame(Column = names(column_zeros_count), ZeroCount = column_zeros_count)
+ggplot(plot_data, aes(x = Column, y = ZeroCount, fill = ZeroCount)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient(low = "blue", high = "red") +  # 使用渐变色
+  labs(title = "Number of Zeros in Each Column", x = "Column", y = "Number of Zeros") +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1)) 
+#打印平均每一列为0的数量
+print(sum(column_zeros_count)/length(column_zeros_count))
+```
+
+## 影响因素相关性分析
+
+可以看到为0的数据还是相当多的，无论是每一行或者是每一列，这个比例都接近于50%，那么这就涉及到这些"0"数据的预处理。我们首先计算每一列除了为0的数据之外的平均值，并将这些平均值给到为0的数据之后，进行变量的相关性分析。
+
+```{r}
+#计算平均值
+avg<-apply(p_data,2,function(x)mean(x[x!=0]))
+#根据列对应赋值
+data_fill<-p_data
+for(i in 1:ncol(data_fill)){
+  data_fill[data_fill[,i]==0,i]<-avg[i]
+}
+```
+
+因为我们主要研究Gross_Tertiary_Education_Enrollment和 Unemployment_Rate，所以只对这两个变量做分析
+
+```{r}
+#先看看Gross_Tertiary_Education_Enrollment
+cor_matrix<-cor(data_fill)
+edu_correlation<-cor_matrix["Gross_Tertiary_Education_Enrollment", ]
+
+#变成dataframe好画图
+edu_correlation_frame <- data.frame(Variable = names(edu_correlation), Correlation = edu_correlation)
+
+# 移除目标变量自身的相关性
+edu_correlation_frame <- edu_correlation_frame[edu_correlation_frame$Variable != "Gross_Tertiary_Education_Enrollment", ]
+
+library(ggplot2)
+ggplot(edu_correlation_frame, aes(x = Variable, y = Correlation, fill = Correlation)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Correlation with Education", x = "Variable", y = "Correlation")
+
+```
+
+```{r}
+#再看Unemployment_Rate
+une_correlation<-cor_matrix["Unemployment_Rate", ]
+
+#变成dataframe好画图
+une_correlation_frame <- data.frame(Variable = names(une_correlation), Correlation = une_correlation)
+
+# 移除目标变量自身的相关性
+une_correlation_frame <- une_correlation_frame[une_correlation_frame$Variable != "Unemployment_Rate", ]
+
+library(ggplot2)
+ggplot(une_correlation_frame, aes(x = Variable, y = Correlation, fill = Correlation)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Correlation with Unemployment_Rate", x = "Variable", y = "Correlation")
+```
+
+## 数据预处理
+
+根据相关性矩阵，我们发现在高校入学率中，相关性普遍较高；而在失业率中，相关性普遍较低。因此，我们根据这一不同的情况，设置不同的筛选门槛。针对高校入学率，将门槛设置为0.1，而针对失业率将门槛设置为0.05。
+
+同时，数据预处理还包括将为0值的数据替换成该列的平均值。
+
+最后，留意到数据的经纬度实际上没有给出东西和南北的属性，只给出了绝对值。在这种情况下，考虑到经济研究中常常提到的"东西方国家"和"南北国家"概念，我们决定只考虑纬度因素（因为南半球高纬度国家比较少），而忽略经度。
+
+```{r}
+#针对une(Unemployment)，门槛设置为0.05
+significant_vars_une <- names(which(abs(une_correlation) >= 0.05))
+#针对edu(Gross_Tertiary_Education_Enrollment)，门槛设置为0.1
+significant_vars_edu <- names(which(abs(edu_correlation) >= 0.1))
+```
+
+```{r}
+#去除经度，保留纬度
+# if (!"Latitude" %in% significant_vars_une) {
+#     significant_vars_une <- c(significant_vars_une, "Latitude")
+# }
+# significant_vars_une <- significant_vars_une[significant_vars_une != "Longitude"]
+# 
+# if (!"Latitude" %in% significant_vars_edu) {
+#     significant_vars_edu <- c(significant_vars_edu, "Latitude")
+# }
+# significant_vars_edu <- significant_vars_edu[significant_vars_edu != "Longitude"]
+
+
+significant_vars_une <- union(significant_vars_une, c("Latitude", "Longitude"))
+significant_vars_edu <- union(significant_vars_edu, c("Latitude", "Longitude"))
+
+
+#筛选用的是填充过的data_fill，而不是原始数据data
+data_significant_une <- as.data.frame(data_fill[, significant_vars_une])
+data_significant_edu <- as.data.frame(data_fill[, significant_vars_edu])
+```
+
+## LM拟合
+
+用LM分别拟合以上两个dataframe的数据
+
+```{r}
+#失业率模型
+une_model<-lm(Unemployment_Rate ~ .,data=as.data.frame(data_significant_une))
+summary(une_model)
+```
+
+```{r}
+#高校入学率模型
+edu_model<-lm(Gross_Tertiary_Education_Enrollment ~ .,data=as.data.frame(data_significant_edu))
+summary(edu_model)
+```
+
+## 模型优化
+
+留意到une_model的两个R方数据都非常差，考虑对其进行AIC优化。
+
+```{r}
+#针对une模型优化
+une_model_forward <- step(une_model, direction = "forward",trace=0)
+summary(une_model_forward)
+une_model_backward <- step(une_model, direction = "backward",trace=0)
+summary(une_model_backward)
+```
+
+```{r}
+#针对edu模型优化
+edu_model_forward <- step(edu_model, direction = "forward",trace=0)
+summary(edu_model_forward)
+edu_model_backward <- step(edu_model, direction = "backward",trace=0)
+summary(edu_model_backward)
+```
+
+利用AIC的backward进行优化之后，两个模型的R方都获得了提升。下面根据两个模型优化后的backward模型进行权重可视化：
+
+```{r}
+#针对
+library(ggplot2)
+coefficients <- coef(edu_model_backward)
+coefficients_df <- data.frame(
+  Term = names(coefficients)[-1],
+  Estimate = coefficients[-1]
+)
+coefficients_df <- coefficients_df[order(-abs(coefficients_df$Estimate)),]
+
+ggplot(coefficients_df, aes(x = Term, y = Estimate, fill = Estimate)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  coord_flip() +  # 翻转坐标轴，使得条形图水平显示
+  theme_minimal() +
+  labs(title = "Model Coefficients", x = "Coefficient Value", y = "Term")
+```
+
+```{r}
+coefficients <- coef(une_model_backward)
+coefficients_df <- data.frame(
+  Term = names(coefficients)[-1],
+  Estimate = coefficients[-1]
+)
+coefficients_df <- coefficients_df[order(-abs(coefficients_df$Estimate)),]
+ggplot(coefficients_df, aes(x = Term, y = Estimate, fill = Estimate)) +
+  geom_bar(stat = "identity") +
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0) +
+  coord_flip() +  # 翻转坐标轴，使得条形图水平显示
+  theme_minimal() +
+  labs(title = "Model Coefficients", x = "Coefficient Value", y = "Term")
+
+```
